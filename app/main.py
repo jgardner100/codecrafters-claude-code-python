@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from openai import OpenAI
@@ -48,7 +49,25 @@ WRITE_TOOL = {
     },
 }
 
-TOOLS = [READ_TOOL, WRITE_TOOL]
+BASH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "Bash",
+        "description": "Execute a shell command",
+        "parameters": {
+            "type": "object",
+            "required": ["command"],
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The command to execute",
+                }
+            },
+        },
+    },
+}
+
+TOOLS = [READ_TOOL, WRITE_TOOL, BASH_TOOL]
 
 
 def execute_read_tool(arguments: str) -> str:
@@ -70,6 +89,28 @@ def execute_write_tool(arguments: str) -> str:
     return f"Wrote {len(content)} bytes to {file_path}"
 
 
+def execute_bash_tool(arguments: str) -> str:
+    parsed_args = json.loads(arguments or "{}")
+    command = parsed_args["command"]
+
+    completed = subprocess.run(
+        command,
+        shell=True,
+        cwd=os.getcwd(),
+        text=True,
+        capture_output=True,
+    )
+
+    output = completed.stdout + completed.stderr
+    if output:
+        return output
+
+    if completed.returncode != 0:
+        return f"Command exited with status {completed.returncode}"
+
+    return ""
+
+
 def execute_tool(tool_call) -> str:
     if tool_call.type != "function":
         raise RuntimeError(f"unsupported tool call type: {tool_call.type}")
@@ -79,6 +120,8 @@ def execute_tool(tool_call) -> str:
         return execute_read_tool(tool_call.function.arguments)
     if function_name == "Write":
         return execute_write_tool(tool_call.function.arguments)
+    if function_name == "Bash":
+        return execute_bash_tool(tool_call.function.arguments)
 
     raise RuntimeError(f"unsupported tool call: {function_name}")
 
