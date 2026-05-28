@@ -26,6 +26,30 @@ READ_TOOL = {
     },
 }
 
+WRITE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "Write",
+        "description": "Write content to a file",
+        "parameters": {
+            "type": "object",
+            "required": ["file_path", "content"],
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "The path of the file to write to",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The content to write to the file",
+                },
+            },
+        },
+    },
+}
+
+TOOLS = [READ_TOOL, WRITE_TOOL]
+
 
 def execute_read_tool(arguments: str) -> str:
     parsed_args = json.loads(arguments or "{}")
@@ -35,15 +59,28 @@ def execute_read_tool(arguments: str) -> str:
         return f.read()
 
 
+def execute_write_tool(arguments: str) -> str:
+    parsed_args = json.loads(arguments or "{}")
+    file_path = parsed_args["file_path"]
+    content = parsed_args["content"]
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return f"Wrote {len(content)} bytes to {file_path}"
+
+
 def execute_tool(tool_call) -> str:
     if tool_call.type != "function":
         raise RuntimeError(f"unsupported tool call type: {tool_call.type}")
 
     function_name = tool_call.function.name
-    if function_name != "Read":
-        raise RuntimeError(f"unsupported tool call: {function_name}")
+    if function_name == "Read":
+        return execute_read_tool(tool_call.function.arguments)
+    if function_name == "Write":
+        return execute_write_tool(tool_call.function.arguments)
 
-    return execute_read_tool(tool_call.function.arguments)
+    raise RuntimeError(f"unsupported tool call: {function_name}")
 
 
 def assistant_message_to_dict(message) -> dict:
@@ -84,7 +121,7 @@ def main():
         chat = client.chat.completions.create(
             model="anthropic/claude-haiku-4.5",
             messages=messages,
-            tools=[READ_TOOL],
+            tools=TOOLS,
         )
 
         if not chat.choices:
